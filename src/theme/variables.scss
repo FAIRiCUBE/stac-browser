@@ -4,9 +4,9 @@
 // For simplicity we just provide some common options as default, but you can override all Bootstrap Sass variables.
 
 // Header / Logo, either image (see below), text (shows CATALOG_TITLE) or none
-$logo: 'none'; 
+$logo: 'image';
 // If 'image' has been chosen above
-$logo-image: 'https://raw.githubusercontent.com/radiantearth/stac-site/master/images/logo/stac-030-long.png';
+$logo-image: 'https://avatars.githubusercontent.com/u/108520563?s=200&v=4';
 $logo-image-height: 100px;
 
 // Background and text default colors
