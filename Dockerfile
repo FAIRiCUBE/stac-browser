@@ -1,12 +1,13 @@
 FROM node:lts-alpine3.18 AS build-step
 ARG DYNAMIC_CONFIG=true
+ARG catalogURL
 
 WORKDIR /app
 COPY package*.json ./
 RUN npm install
 COPY . .
 RUN \[ "${DYNAMIC_CONFIG}" == "true" \] && sed -i 's/<!-- <script defer="defer" src=".\/config.js"><\/script> -->/<script defer="defer" src=".\/config.js"><\/script>/g' public/index.html
-RUN npm run build
+RUN build -- --catalogUrl=$catalogURL
 
 
 FROM nginx:1-alpine-slim
