@@ -182,15 +182,12 @@
     "less": "Citiți mai puțin",
     "more": "Citiți mai mult"
   },
+  "reset": "Resetați",
   "search": {
     "addCollections": "Apăsați Enter pentru a adăuga o colecție",
     "addFilter": "Adăugați un filtru",
     "addItemIds": "Apăsați Enter pentru a adăuga un ID de articol",
     "additionalFilters": "Filtre suplimentare",
-    "buttons": {
-      "filter": "Filtru",
-      "reset": "Resetați"
-    },
     "dateDescription": "Toate orele sunt timp universal coordonat (UTC).",
     "enterCollections": "Introduceți una sau mai multe colecții...",
     "enterItemIds": "Introduceți unul sau mai multe ID-uri de articol...",
@@ -239,6 +236,7 @@
   "source": {
     "detailsAboutSource": "Despre sursa STAC",
     "fileFormat": "Formatul fișierului",
+    "id": "Identificator",
     "label": "Sursă",
     "language": {
       "label": "Limbă: {currentLanguage}",

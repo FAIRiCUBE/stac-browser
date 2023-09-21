@@ -8,7 +8,7 @@ implemented as a single page application (SPA) for ease of development and to
 limit the overall number of catalog reads necessary when browsing (as catalogs
 may be nested and do not necessarily contain references to their parents).
 
-Version: **3.0.2** (supports all STAC versions between 0.6.0 and 1.0.0)
+Version: **3.1.0** (supports all STAC versions between 0.6.0 and 1.0.0)
 
 This package has also been published to npm as [`@radiantearth/stac-browser`](https://www.npmjs.com/package/@radiantearth/stac-browser).
 
@@ -68,8 +68,11 @@ npm run build -- --catalogUrl="https://earth-search.aws.element84.com/v1/"
 This will only work on the root path of your domain though. If you'd like to publish in a sub-folder, 
 you can use the [`pathPrefix`](docs/options.md#pathprefix) option.
 
-After building, `dist/` will contain all assets necessary to
+After building, `dist/` will contain all assets necessary
 host the browser. These can be manually copied to your web host of choice.
+**Important:** If `historyMode` is set to `history` (which is the default value), you'll need to add
+an additional configuration file for URL rewriting.
+Please see the [`historyMode`](docs/options.md#historymode) option for details.
 
 You can customize STAC Browser, too. See the options and theming details below.
 If not stated otherwise, all options can either be specified via CLI, ENV variables or in the [config file](config.js).
@@ -112,6 +115,8 @@ The following languages are currently supported:
 - fr: French (Canada, France, Switzerland)
 - it: Italian (Italy, Switzerland)
 - ro: Romanian
+
+We manage the translations in Crowdin, please see <https://crowdin.com/project/stac-browser/> for details.
 
 To add your own language, please follow the guide below: [Adding a new langauge](#adding-a-new-language)
 
@@ -282,6 +287,7 @@ You can also use one of the existing languages and provide an alternate version 
 - Adapt the `datepicker.js` and `duration.js` files to import the existing definitions from their corresponding external packages, but you could also define the specifics yourself.
 - Check that your translation works by running the development server (`npm start`) and navigating to the STAC Browser instance in your browser (usually `http://localhost:8080`).
 - Once completed, please open a pull request and we'll get back to you as soon as possible.
+- After merging the PR for the first time, we'll add you to our translation management tool Crowdin: <https://crowdin.com/project/stac-browser/>. Please get in touch to get your invite!
 
 # Sponsors
 
@@ -292,3 +298,6 @@ The following sponsors have provided a subststantial amount of funding for STAC 
 - [Matthias Mohr - Softwareentwicklung](https://mohr.ws) (maintenance)
 - [Spacebel](https://spacebel.com) (collection search)
 - [Planet](https://planet.com) (OpenID Connect authentication, other features, maintenance)
+
+**Please note that STAC Browser is currently mostly without funding for both maintenance, bug fixes and improvements.
+If you care about STAC Browser and have some funds to support the future of STAC Browser, please contact me: matthias@mohr.ws**
