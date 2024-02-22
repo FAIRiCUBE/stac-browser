@@ -320,6 +320,12 @@ export default {
   created() {
     let promises = [];
     if (this.cql && this.stac) {
+      this.stac.links.push({
+        title: "Queryables",
+        href: "https://stacapi.eoxhub.fairicube.eu/queryables",
+        rel: "http://www.opengis.net/def/rel/ogc/1.0/queryables",
+        type: "application/schema+json"
+      })
       let queryableLink = this.findQueryableLink(this.stac.links);
       promises.push(
         this.loadQueryables(queryableLink)
@@ -604,7 +610,7 @@ $primary-color: map-get($theme-colors, "primary");
     color: #495057;
     border-color: #495057 transparent transparent;
   }
-  
+
   .multiselect__tags,
   .multiselect__single {
     border-color: #ced4da;
