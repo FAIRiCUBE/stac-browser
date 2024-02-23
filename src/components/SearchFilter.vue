@@ -136,6 +136,7 @@ import Queryable from '../models/cql2/queryable';
 import CqlValue from '../models/cql2/value';
 import CqlLogicalOperator from '../models/cql2/operators/logical';
 import { CqlEqual } from '../models/cql2/operators/comparison';
+import { CqlILike } from '../models/cql2/operators/advanced';
 import { stacRequest } from '../store/utils';
 
 function getQueryDefaults() {
@@ -489,7 +490,7 @@ export default {
     additionalFieldSelected(queryable) {
       this.filters.push({
         value: CqlValue.create(queryable.defaultValue),
-        operator: CqlEqual,
+        operator: CqlILike,
         queryable
       });
     },
