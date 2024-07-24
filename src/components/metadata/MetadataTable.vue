@@ -59,6 +59,9 @@ export default {
     },
     tblFields() {
       let fields = [];
+      if (this.field == "raster:bands" ){
+        this.itemOrder = this.itemOrder.sort()
+      }
       for(let key of this.itemOrder) {
         let col = this.items[key];
         fields.push({
