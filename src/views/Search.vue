@@ -1,17 +1,17 @@
 <template>
   <main class="search d-flex flex-column">
     <Loading v-if="!parent" stretch />
-    <b-alert v-else-if="!canSearch" variant="danger" show>{{ $t('search.notSupported') }}</b-alert>
+    <b-alert v-else-if="!searchLink" variant="danger" show>{{ $t('search.notSupported') }}</b-alert>
     <b-row v-else>
       <b-col class="left">
         <b-tabs v-model="activeSearch">
-          <b-tab v-if="canSearchCollections" :title="$t('search.tabs.collections')">
+          <b-tab v-if="collectionSearch" :title="$t('search.tabs.collections')">
             <SearchFilter
               :parent="parent" title="" :value="collectionFilters" type="Collections"
               @input="setFilters"
             />
           </b-tab>
-          <b-tab v-if="canSearchItems" :title="$t('search.tabs.items')">
+          <b-tab v-if="itemSearch" :title="$t('search.tabs.items')">
             <SearchFilter
               :parent="parent" title="" :value="itemFilters" type="Global"
               @input="setFilters"
@@ -23,6 +23,7 @@
         <b-alert v-if="error" variant="error" show>{{ error }}</b-alert>
         <Loading v-else-if="!data && loading" fill top />
         <b-alert v-else-if="data === null" variant="info" show>{{ $t('search.modifyCriteria') }}</b-alert>
+        <b-alert v-else-if="results.length === 0 && noFurtherItems" variant="info" show>{{ $t('search.noFurtherItemsFound') }}</b-alert>
         <b-alert v-else-if="results.length === 0" variant="warning" show>{{ $t('search.noItemsFound') }}</b-alert>
         <template v-else>
           <div id="search-map" v-if="itemCollection">
@@ -34,8 +35,8 @@
             :count="totalCount"
           >
             <template #catalogFooter="slot">
-              <b-button-group v-if="canSearchItems || canFilterItems(slot.data)" vertical size="sm">
-                <b-button v-if="canSearchItems" variant="outline-primary" :pressed="selectedCollections[slot.data.id]" @click="selectForItemSearch(slot.data)">
+              <b-button-group v-if="itemSearch || canFilterItems(slot.data)" vertical size="sm">
+                <b-button v-if="itemSearch" variant="outline-primary" :pressed="selectedCollections[slot.data.id]" @click="selectForItemSearch(slot.data)">
                   <b-icon-check-square v-if="selectedCollections[slot.data.id]" />
                   <b-icon-square v-else />
                   <span class="ml-2">{{ $t('search.selectForItemSearch') }}</span>
@@ -107,7 +108,7 @@ export default {
   },
   computed: {
     ...mapState(['catalogUrl', 'catalogTitle', 'itemsPerPage']),
-    ...mapGetters(['canSearch', 'canSearchItems', 'canSearchCollections', 'getStac', 'root', 'collectionLink', 'parentLink', 'fromBrowserPath', 'toBrowserPath']),
+    ...mapGetters(['canSearchItems', 'canSearchCollections', 'getStac', 'root', 'collectionLink', 'parentLink', 'fromBrowserPath', 'toBrowserPath']),
     selectedCollectionCount() {
       return Utils.size(this.selectedCollections);
     },
@@ -124,13 +125,13 @@ export default {
       return null;
     },
     searchLink() {
-      return this.isCollectionSearch ? this.collectionSearchLink : this.itemSearchLink;
+      return this.isCollectionSearch ? this.collectionSearch : this.itemSearch;
     },
-    collectionSearchLink() {
-      return this.parent instanceof STAC && this.parent.getApiCollectionsLink();
+    collectionSearch() {
+      return this.canSearchCollections && this.parent instanceof STAC && this.parent.getApiCollectionsLink();
     },
-    itemSearchLink() {
-      return this.parent instanceof STAC && this.parent.getSearchLink();
+    itemSearch() {
+      return this.canSearchItems && this.parent instanceof STAC && this.parent.getSearchLink();
     },
     itemCollection() {
       if (this.isCollectionSearch) {
@@ -179,11 +180,18 @@ export default {
       return this.isCollectionSearch ? this.collectionFilters : this.itemFilters;
     },
     isCollectionSearch() {
-      return this.canSearchCollections && this.activeSearch === 0;
+      return this.collectionSearch && this.activeSearch === 0;
     },
     pageDescription() {
       let title = STAC.getDisplayTitle([this.collectionLink, this.parentLink, this.root], this.catalogTitle);
       return this.$t('search.metaDescription', {title});
+    },
+    noFurtherItems() {
+      // Ideally this would be dertmined by the prev link, but it's not required
+      // so we check whether our current link has a next rel type which indicates
+      // that it's a subsequent page. On the first pages the link rel type would be
+      // "search" (or "prev" or "first"). This only works for forward navigation.
+      return this.link.rel === 'next';
     }
   },
   watch:{
@@ -211,11 +219,19 @@ export default {
     if (!this.parent) {
       await this.$store.dispatch('load', { url });
       if (!this.root) {
-        this.$store.commit("config", { catalogUrl: url });
+        await this.$store.dispatch("config", { catalogUrl: url });
       }
       this.parent = this.getStac(url);
       this.showPage();
     }
+    
+    // Fixes https://github.com/radiantearth/stac-browser/issues/428
+    this.$root.$on('uiLanguageChanged', () => {
+      this.$store.commit('setPageMetadata', {
+        title: this.$t('search.title'),
+        description: this.pageDescription
+      });
+    });
   },
   methods: {
     openItemSearch() {

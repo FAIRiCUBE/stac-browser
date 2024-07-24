@@ -1,7 +1,6 @@
 import Vue from "vue";
 import Vuex from "vuex";
 
-import axios from "axios";
 import URI from "urijs";
 
 import i18n from '../i18n';
@@ -9,9 +8,13 @@ import { stacBrowserSpecialHandling } from "../rels";
 import Utils, { BrowserError } from '../utils';
 import STAC from '../models/stac';
 
+import auth from './auth.js';
 import { addQueryIfNotExists, isAuthenticationError, Loading, processSTAC, proxyUrl, unproxyUrl, stacRequest } from './utils';
 import { getBest } from '../locale-id';
+import I18N from '@radiantearth/stac-fields/I18N';
+import { translateFields, executeCustomFunctions, loadMessages } from '../i18n';
 import { TYPES } from "../components/ApiCapabilitiesMixin";
+import BrowserStorage from "../browser-store.js";
 
 function getStore(config, router) {
   // Local settings (e.g. for currently loaded STAC entity)
@@ -20,7 +23,6 @@ function getStore(config, router) {
     title: config.catalogTitle,
     description: null,
     data: null,
-    valid: null,
     parents: null,
     globalError: null,
 
@@ -39,8 +41,7 @@ function getStore(config, router) {
   const catalogDefaults = () => ({
     queue: [],
     privateQueryParameters: {},
-    authData: null,
-    doAuth: [],
+    authActions: [],
     conformsTo: [],
     dataLanguage: null,
     dataLanguages: [],
@@ -51,7 +52,10 @@ function getStore(config, router) {
   });
 
   return new Vuex.Store({
-    strict: true,
+    strict: process.env.NODE_ENV !== 'production',
+    modules: {
+      auth: auth(router)
+    },
     state: Object.assign({}, config, localDefaults(), catalogDefaults(), {
       // Global settings
       database: {}, // STAC object, Error object or Loading object or Promise (when loading)
@@ -370,6 +374,7 @@ function getStore(config, router) {
     },
     mutations: {
       config(state, config) {
+        // This should only be called from the config action
         for (let key in config) {
           let value = config[key];
           switch (key) {
@@ -492,13 +497,18 @@ function getStore(config, router) {
       resetPage(state) {
         Object.assign(state, localDefaults());
       },
+      setPageMetadata(state, { title, description }) {
+        state.title = title;
+        if (typeof description !== 'undefined') {
+          state.description = description;
+        }
+      },
       showPage(state, { url, title, description, stac }) {
         if (!stac) {
           stac = state.database[url] || null;
         }
         state.url = url || null;
         state.data = stac instanceof STAC ? stac : null;
-        state.valid = null;
         state.description = description;
 
         // Set title
@@ -529,9 +539,6 @@ function getStore(config, router) {
           error = new Error(error);
         }
         Vue.set(state.database, url, error);
-      },
-      valid(state, valid) {
-        state.valid = valid;
       },
       queue(state, url) {
         state.queue.push(url);
@@ -607,20 +614,37 @@ function getStore(config, router) {
         state.parents = parents;
       },
       showGlobalError(state, error) {
-        console.error(error);
+        if(error) {
+          console.trace(error);
+        }
         state.globalError = error;
       }
     },
     actions: {
+      async config(cx, config) {
+        cx.commit('config', config);
+        // React on config changes
+        for (let key in config) {
+          let value = cx.state[key];
+          switch (key) {
+            case 'catalogUrl':
+              if (value) {
+                // Load the root catalog data if not available (e.g. after page refresh or external access)
+                await cx.dispatch("load", { url: value, loadApi: true });
+              }
+              break;
+            case 'authConfig':
+              await cx.dispatch('auth/updateMethod', value);
+              break;
+          }
+        }
+      },
       async switchLocale(cx, {locale, userSelected}) {
-        cx.commit('config', {locale});
+        await cx.dispatch('config', {locale});
 
         if (cx.state.storeLocale && userSelected) {
-          try {
-            window.localStorage.setItem('locale', locale);
-          } catch (error) {
-            console.error(error);
-          }
+          const storage = new BrowserStorage();
+          storage.set('locale', locale);
         }
 
         // Locale for UI
@@ -630,36 +654,18 @@ function getStore(config, router) {
         let dataLanguageFallback = cx.state.dataLanguages.length > 0 ? cx.state.dataLanguages[0].code : uiLanguage;
         let dataLanguage = getBest(dataLanguageCodes, locale, dataLanguageFallback);
 
+        // Load messages
+        await loadMessages(uiLanguage);
+
+        // Update stac-fields
+        I18N.setLocales([uiLanguage, cx.state.fallbackLocale]);
+        I18N.setTranslator(translateFields);
+
+        // Execute other custom functions required to localize
+        await executeCustomFunctions(uiLanguage);
+
         cx.commit('languages', {dataLanguage, uiLanguage});
         cx.commit('setQueryParameter', { type: 'state', key: 'language', value: locale });
-      },
-      async setAuth(cx, value) {
-        if (!Utils.hasText(value)) {
-          value = null;
-        }
-        // Set the value the user has provided separately
-        cx.commit('setAuthData', value);
-
-        // Format the value and add it to query parameters or headers
-        let authConfig = cx.state.authConfig;
-        let key = authConfig.key;
-        if (value) {
-          if (authConfig.formatter === 'Bearer') {
-            value = `Bearer ${value}`;
-          }
-          else if (typeof authConfig.formatter === 'function') {
-            value = authConfig.formatter(value);
-          }
-        }
-        if (!Utils.hasText(value)) {
-          value = undefined;
-        }
-        if (authConfig.type === 'query') {
-          cx.commit('setQueryParameter', {type: 'private', key, value});
-        }
-        else if (authConfig.type === 'header') {
-          cx.commit('setRequestHeader', {key, value});
-        }
       },
       async loadBackground(cx, count) {
         let urls = cx.state.queue.slice(0, count);
@@ -700,11 +706,22 @@ function getStore(config, router) {
         }
         cx.commit('parents', parents);
       },
+      async tryLogin(cx, {url, action}) {
+        cx.commit('clear', url);
+        cx.commit('errored', { url, error: new BrowserError(i18n.t('authentication.unauthorized')) });
+        if (action) {
+          cx.commit('auth/addAction', action);
+        }
+        await cx.dispatch('auth/requestLogin');
+      },
       async load(cx, args) {
-        let { url, show, loadApi, loadRoot, force } = args;
+        let { url, show, loadApi, loadRoot, force, noRetry } = args;
 
         let path = cx.getters.toBrowserPath(url);
         url = Utils.toAbsolute(url, cx.state.url);
+
+        // Make sure we have all authentication details
+        await cx.dispatch("auth/waitForAuth");
 
         // Load the root catalog data if not available (e.g. after page refresh or external access)
         if (!loadRoot && path !== '/' && cx.state.catalogUrl && !cx.getters.getStac(cx.state.catalogUrl)) {
@@ -721,7 +738,7 @@ function getStore(config, router) {
           cx.commit('updateLoading', { url, show, loadApi });
           return;
         }
-        else if (!data || (data instanceof STAC && data.isPotentiallyIncomplete())) {
+        else if (!data || data instanceof Error || (data instanceof STAC && data.isPotentiallyIncomplete())) {
           cx.commit('loading', { url, loading });
           try {
             let response = await stacRequest(cx, url);
@@ -729,6 +746,8 @@ function getStore(config, router) {
               throw new BrowserError(i18n.t('errors.invalidJsonObject'));
             }
             data = new STAC(response.data, url, path);
+            cx.commit('loaded', { url, data });
+
             if (show) {
               // If we prefer another language abort redirect to the new language
               let localeLink = data.getLocaleLink(cx.state.dataLanguage);
@@ -738,12 +757,10 @@ function getStore(config, router) {
               }
             }
 
-            cx.commit('loaded', { url, data });
-
             if (!cx.getters.root) {
               let root = data.getLinkWithRel('root');
               if (root) {
-                cx.commit('config', { catalogUrl: Utils.toAbsolute(root.href, url) });
+                await cx.dispatch('config', { catalogUrl: Utils.toAbsolute(root.href, url) });
               }
             }
 
@@ -755,9 +772,11 @@ function getStore(config, router) {
               await cx.dispatch('loadOgcApiConformance', conformanceLink);
             }
           } catch (error) {
-            if (cx.state.authConfig && isAuthenticationError(error)) {
-              cx.commit('clear', url);
-              cx.commit('requestAuth', () => cx.dispatch('load', args));
+            if (!noRetry && cx.state.authConfig && isAuthenticationError(error)) {
+              await cx.dispatch('tryLogin', {
+                url,
+                action: () => cx.dispatch('load', Object.assign({noRetry: true, force: true, show: true}, args))
+              });
               return;
             }
             console.error(error);
@@ -772,15 +791,10 @@ function getStore(config, router) {
             try {
               await cx.dispatch('loadNextApiCollections', args);
             } catch (error) {
-              if (cx.state.authConfig && isAuthenticationError(error)) {
-                cx.commit('requestAuth', () => cx.dispatch('loadNextApiCollections', args));
-              }
-              else {
-                cx.commit('showGlobalError', {
-                  message: i18n.t('errors.loadApiCollectionsFailed'),
-                  error
-                });
-              }
+              cx.commit('showGlobalError', {
+                message: i18n.t('errors.loadApiCollectionsFailed'),
+                error
+              });
             }
           }
           // Load API Items
@@ -789,15 +803,10 @@ function getStore(config, router) {
             try {
               await cx.dispatch('loadApiItems', args);
             } catch (error) {
-              if (cx.state.authConfig && isAuthenticationError(error)) {
-                cx.commit('requestAuth', () => cx.dispatch('loadApiItems', args));
-              }
-              else {
-                cx.commit('showGlobalError', {
-                  message: i18n.t('errors.loadApiItemsFailed'),
-                  error
-                });
-              }
+              cx.commit('showGlobalError', {
+                message: i18n.t('errors.loadApiItemsFailed'),
+                error
+              });
             }
           }
         }
@@ -806,7 +815,8 @@ function getStore(config, router) {
           cx.commit('showPage', { url });
         }
       },
-      async loadApiItems(cx, { link, stac, show, filters }) {
+      async loadApiItems(cx, args) {
+        let { link, stac, show, filters, noRetry } = args;
         let collectionId = stac instanceof STAC ? stac.id : '';
         cx.commit('toggleApiItemsLoading', collectionId);
 
@@ -876,10 +886,18 @@ function getStore(config, router) {
           }
         } catch (error) {
           cx.commit('toggleApiItemsLoading', collectionId);
+          if (!noRetry && cx.state.authConfig && isAuthenticationError(error)) {
+            await cx.dispatch('tryLogin', {
+              url: link.href,
+              action: () => cx.dispatch('loadApiItems', Object.assign({noRetry: true, force: true}, args))
+            });
+            return;
+          }
           throw error;
         }
       },
-      async loadNextApiCollections(cx, { stac, show }) {
+      async loadNextApiCollections(cx, args) {
+        let { stac, show, noRetry } = args;
         let link;
         if (stac) {
           // First page
@@ -897,32 +915,43 @@ function getStore(config, router) {
         if (!link) {
           return;
         }
-        let response = await stacRequest(cx, link);
-        if (!Utils.isObject(response.data) || !Array.isArray(response.data.collections)) {
-          throw new BrowserError(i18n.t('errors.invalidStacCollections'));
-        }
-        else {
-          response.data.collections = response.data.collections.map(collection => {
-            let selfLink = Utils.getLinkWithRel(collection.links, 'self');
-            let url;
-            if (selfLink?.href) {
-              url = Utils.toAbsolute(selfLink.href, cx.state.url || stac.getAbsoluteUrl());
-            }
-            else {
-              url = Utils.toAbsolute(`collections/${collection.id}`, cx.state.catalogUrl || stac.getAbsoluteUrl());
-            }
-            let data = cx.getters.getStac(url);
-            if (data) {
-              return data;
-            }
-            else {
-              data = new STAC(collection, url, cx.getters.toBrowserPath(url));
-              data.markPotentiallyIncomplete();
-              cx.commit('loaded', { data, url });
-              return data;
-            }
-          });
-          cx.commit('addApiCollections', { data: response.data, stac, show });
+        try {
+          let response = await stacRequest(cx, link);
+          if (!Utils.isObject(response.data) || !Array.isArray(response.data.collections)) {
+            throw new BrowserError(i18n.t('errors.invalidStacCollections'));
+          }
+          else {
+            response.data.collections = response.data.collections.map(collection => {
+              let selfLink = Utils.getLinkWithRel(collection.links, 'self');
+              let url;
+              if (selfLink?.href) {
+                url = Utils.toAbsolute(selfLink.href, cx.state.url || stac.getAbsoluteUrl());
+              }
+              else {
+                url = Utils.toAbsolute(`collections/${collection.id}`, cx.state.catalogUrl || stac.getAbsoluteUrl());
+              }
+              let data = cx.getters.getStac(url);
+              if (data) {
+                return data;
+              }
+              else {
+                data = new STAC(collection, url, cx.getters.toBrowserPath(url));
+                data.markPotentiallyIncomplete();
+                cx.commit('loaded', { data, url });
+                return data;
+              }
+            });
+            cx.commit('addApiCollections', { data: response.data, stac, show });
+          }
+        } catch (error) {
+          if (!noRetry && cx.state.authConfig && isAuthenticationError(error)) {
+            await cx.dispatch('tryLogin', {
+              url: link.href,
+              action: () => cx.dispatch('loadNextApiCollections', Object.assign({noRetry: true, force: true}, args))
+            });
+            return;
+          }
+          throw error;
         }
       },
       async loadOgcApiConformance(cx, link) {
@@ -954,19 +983,6 @@ function getStore(config, router) {
           } catch (error) {
             errorFn(error);
           }
-        }
-      },
-      async validate(cx, url) {
-        if (typeof cx.state.valid === 'boolean') {
-          return;
-        }
-        try {
-          let uri = URI('https://api.staclint.com/url');
-          uri.addSearch('stac_url', url);
-          let response = await axios.get(uri.toString());
-          cx.commit('valid', Boolean(response.data?.body?.valid_stac));
-        } catch (error) {
-          cx.commit('valid', error);
         }
       }
     },

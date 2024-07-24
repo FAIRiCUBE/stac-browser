@@ -170,13 +170,17 @@ export default class Utils {
     return Array.isArray(links) ? links.filter(link => Utils.isObject(link) && Utils.hasText(link.href) && !rels.includes(link.rel)) : [];
   }
 
+  static removeTrailingSlash(str) {
+    return str.replace(/\/$/, '');
+  }
+
   static equalUrl(a, b) {
     try {
       let uri1 = URI(a);
       let uri2 = URI(b);
       // Ignore trailing slash in URL paths
-      uri1.path(uri1.path().replace(/\/$/, ''));
-      uri2.path(uri2.path().replace(/\/$/, ''));
+      uri1.path(Utils.removeTrailingSlash(uri1.path()));
+      uri2.path(Utils.removeTrailingSlash(uri2.path()));
       return uri1.equals(uri2);
     } catch (error) {
       return false;
@@ -243,6 +247,29 @@ export default class Utils {
     }).join('/');
   }
 
+  static formatSortbyForPOST(value) {
+    // POST search requires sortby to be an array of objects containing a property name and sort direction.
+    // See spec here: https://api.stacspec.org/v1.0.0-rc.1/item-search/#tag/Item-Search/operation/postItemSearch
+    // This function converts the property name to the desired format.
+    const sortby = {
+      field: '',
+      direction: 'asc'
+    };
+  
+    // Check if the value starts with a minus sign ("-")
+    if (value.startsWith('-')) {
+      // sort by descending order
+      sortby.field = value.substring(1);
+      sortby.direction = 'desc';
+    } else {
+      //sort by ascending order
+      sortby.field = value;
+    }
+    
+    // Put the object in an array
+    return [sortby];
+  }
+
   static getPaginationLinks(data) {
     let pages = {};
     if (Utils.isObject(data)) {
@@ -284,7 +311,10 @@ export default class Utils {
           continue;
         }
 
-        if (key === 'datetime') {
+        if (key === 'sortby') {
+          value = Utils.formatSortbyForPOST(value);
+        }
+        else if (key === 'datetime') {
           value = Utils.formatDatetimeQuery(value);
         }
         else if (key === 'filters') {

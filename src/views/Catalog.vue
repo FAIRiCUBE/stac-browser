@@ -9,7 +9,7 @@
           <ReadMore v-if="data.description" :lines="10" :text="$t('read.more')" :text-less="$t('read.less')">
             <Description :description="data.description" />
           </ReadMore>
-          <Keywords v-if="Array.isArray(data.keywords) && data.keywords.length > 0" :keywords="data.keywords" />
+          <Keywords v-if="Array.isArray(data.keywords) && data.keywords.length > 0" :keywords="data.keywords" class="mb-3" />
           <section v-if="isCollection" class="metadata mb-4">
             <b-row v-if="licenses">
               <b-col md="4" class="label">{{ $t('catalog.license') }}</b-col>
@@ -20,7 +20,7 @@
               <b-col md="8" class="value"><span v-html="temporalExtents" /></b-col>
             </b-row>
           </section>
-          <Links v-if="linkPosition === 'left'" :title="$t('additionalResources')" :links="additionalLinks" />
+          <Links v-if="linkPosition === 'left'" :title="$t('additionalResources')" :links="additionalLinks" :context="data" />
         </section>
         <section v-if="isCollection || hasThumbnails" class="mb-4">
           <b-card no-body class="maps-preview">
@@ -35,11 +35,11 @@
           </b-card>
         </section>
         <Assets v-if="hasAssets" :assets="assets" :context="data" :shown="shownAssets" @showAsset="showAsset" />
-        <Assets v-if="hasItemAssets && !hasItems" :assets="data.item_assets" :definition="true" />
+        <Assets v-if="hasItemAssets && !hasItems" :assets="data.item_assets" :context="data" :definition="true" />
         <Providers v-if="providers" :providers="providers" />
-        <Metadata :title="$t('metadata.title')" class="mb-4" :type="data.type" :data="data" :ignoreFields="ignoredMetadataFields" />
+        <Metadata class="mb-4" :type="data.type" :data="data" :ignoreFields="ignoredMetadataFields" />
         <CollectionLink v-if="collectionLink" :link="collectionLink" />
-        <Links v-if="linkPosition === 'right'" :title="$t('additionalResources')" :links="additionalLinks" />
+        <Links v-if="linkPosition === 'right'" :title="$t('additionalResources')" :links="additionalLinks" :context="data" />
       </b-col>
       <b-col class="catalogs-container" v-if="hasCatalogs">
         <Catalogs :catalogs="catalogs" :hasMore="!!nextCollectionsLink" @loadMore="loadMoreCollections" />
@@ -52,7 +52,7 @@
           @paginate="paginateItems" @filterItems="filterItems"
           @filtersShown="filtersShown"
         />
-        <Assets v-if="hasItemAssets" :assets="data.item_assets" :definition="true" />
+        <Assets v-if="hasItemAssets" :assets="data.item_assets" :context="data" :definition="true" />
       </b-col>
     </b-row>
   </div>
@@ -127,6 +127,8 @@ export default {
         'stats:catalogs',
         'stats:collections',
         'stats:items',
+        // Special handling for auth
+        'auth:schemes',
         // Special handling for the STAC Browser config
         'stac_browser'
       ]

@@ -21,8 +21,8 @@
           <b-icon-check v-if="locale === l.code" />
           <b-icon-blank v-else />
           <span class="title">
-            {{ l.native }}
-            <template v-if="l.global && l.global !== l.native"> / {{ l.global }}</template>
+            <span :lang="l.code">{{ l.native }}</span>
+            <template v-if="l.global && l.global !== l.native"> / <span lang="en">{{ l.global }}</span></template>
           </span>
           <b-icon-exclamation-triangle v-if="supportsLanguageExt && (!l.ui || !l.data)" :title="l.ui ? $t('source.language.onlyUI') : $t('source.language.onlyData')" class="ml-2" />
         </b-dropdown-item>
@@ -37,9 +37,8 @@
     </b-popover>
 
     <b-popover
-      v-if="stacUrl" id="popover-link" target="popover-link-btn" triggers="click"
-      placement="bottom" container="stac-browser" :title="$t('source.title')" 
-      @show="validate"
+      v-if="stacUrl" id="popover-link" target="popover-link-btn" triggers="focus"
+      placement="bottom" container="stac-browser" :title="$t('source.title')"
     >
       <template v-if="stac">
         <b-row v-if="stacId" class="stac-id">
@@ -53,13 +52,10 @@
           <b-col cols="4">{{ $t('source.stacVersion') }}</b-col>
           <b-col>{{ stacVersion }}</b-col>
         </b-row>
-        <b-row v-if="canValidate" class="validation">
+        <b-row class="stac-valid">
           <b-col cols="4">{{ $t('source.valid') }}</b-col>
           <b-col>
-            <b-spinner v-if="valid === null" :label="$t('source.validating')" small />
-            <template v-else-if="valid === true">✔️</template>
-            <template v-else-if="valid === false">❌</template>
-            <template v-else>{{ $t('source.validationNA') }}</template>
+            <Validation :data="stac" />
           </b-col>
         </b-row>
         <hr>
@@ -84,7 +80,6 @@ import { mapActions, mapGetters, mapState } from 'vuex';
 
 import Url from './Url.vue';
 
-import URI from 'urijs';
 import Utils from '../utils';
 import { getBest, prepareSupported } from '../locale-id';
 import CopyButton from './CopyButton.vue';
@@ -109,6 +104,7 @@ export default {
     RootStats: () => import('./RootStats.vue'),
     Url,
     CopyButton,
+    Validation: () => import('./Validation.vue')
   },
   props: {
     title: {
@@ -120,12 +116,12 @@ export default {
       default: null
     },
     stac: {
-      type: String,
+      type: Object,
       default: null
     }
   },
   computed: {
-    ...mapState(['conformsTo', 'dataLanguages', 'locale', 'privateQueryParameters', 'supportedLocales', 'stacLint', 'stacProxyUrl', 'uiLanguage', 'valid']),
+    ...mapState(['conformsTo', 'dataLanguages', 'locale', 'supportedLocales', 'uiLanguage', 'valid']),
     ...mapGetters(['supportsExtension', 'root']),
     stacVersion() {
       return this.stac?.stac_version;
@@ -153,26 +149,6 @@ export default {
       else {
         return '-';
       }
-    },
-    canValidate() {
-      if (!this.stacLint || typeof this.stacUrl !== 'string') {
-        return false;
-      }
-      else if (Utils.size(this.privateQueryParameters) > 0) {
-        // Don't expose private query parameters to externals
-        return false;
-      }
-      else if (Array.isArray(this.stacProxyUrl)) {
-        // Don't validate if a proxy has been set
-        return false;
-      }
-      let uri = URI(this.stacUrl);
-      let host = uri.hostname().toLowerCase();
-      if (host === 'localhost' || host.startsWith('127.') || host === '::1') {
-        // Can't validate localhost
-        return false;
-      }
-      return true;
     },
     message() {
       return this.$t('source.share.message', {title: this.title, url: this.browserUrl()});
@@ -230,17 +206,12 @@ export default {
         }
       }
       
-      return languages.sort((a,b) => a.global.localeCompare(b.global, this.uiLanguage));
+      const collator = new Intl.Collator(this.uiLanguage);
+      return languages.sort((a,b) => collator.compare(a.global, b.global));
     }
   },
   methods: {
     ...mapActions(['switchLocale']),
-    async validate() {
-      if (!this.canValidate) {
-        return;
-      }
-      await this.$store.dispatch('validate', this.stacUrl);
-    },
     browserUrl() {
       return window.location.toString();
     }
@@ -260,7 +231,8 @@ export default {
   }
 }
 
-#popover-link .stac-id .copy-button {
+#popover-link .stac-id .btn-sm,
+#popover-link .stac-valid .btn-sm {
     padding-top: 0.1rem;
     padding-bottom: 0.1rem;
     font-size: 0.7rem;
